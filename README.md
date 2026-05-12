@@ -32,3 +32,5 @@ You can now browse to the url http://localhost:8000/ to view the website.
 ## Issues
 
 There is a slight problem with beginning a game that doesnt always happen. Once the user inputs a Username to play the game then clicks on the 'Play' button, there is a possibility of getting a server error. To get past this, press the back button on the browser and then click 'Play' again. Keep trying that until it works.
+
+test
