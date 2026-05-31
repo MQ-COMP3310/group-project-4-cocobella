@@ -16,6 +16,7 @@ data = []
 # Security principle: defence in depth for availability (CIA - Availability).
 # Mitigates DoS identified in Task 3 (OWASP A04 Insecure Design).
 # Per-IP limits prevent one client exhausting server resources (RL-01).
+# Snapshot
 limiter = Limiter(
     get_remote_address,
     app=app,
@@ -27,7 +28,7 @@ limiter = Limiter(
 
 @app.errorhandler(429)
 def rate_limit_exceeded(error):
-    # RL-04: fail closed with generic message — no internal config leaked.
+    # RL-04: fail closed with message
     return render_template("rate_limited.html", page_title="Too Many Requests"), 429
 
 
@@ -129,6 +130,7 @@ def get_scores():
 
 # HOMEPAGE
 @app.route('/', methods=["GET", "POST"])
+# Snapshot
 @limiter.limit("10 per minute", methods=["POST"])  # RL-02: stricter POST limit
 def index():
     if request.method == "POST":
