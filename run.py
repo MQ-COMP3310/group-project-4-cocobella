@@ -2,6 +2,8 @@ import os
 import sys
 from importlib import reload
 from flask import Flask, render_template, redirect, request, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Needed for encoding to utf8
 reload(sys)
@@ -9,6 +11,25 @@ reload(sys)
 app = Flask(__name__)
 app.secret_key = 'some_secret'
 data = []
+
+# Task 9 - Feature 1: Rate limiting
+# Security principle: defence in depth for availability (CIA - Availability).
+# Mitigates DoS identified in Task 3 (OWASP A04 Insecure Design).
+# Per-IP limits prevent one client exhausting server resources (RL-01).
+# Snapshot
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+    headers_enabled=True,
+)
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    # RL-04: fail closed with message
+    return render_template("rate_limited.html", page_title="Too Many Requests"), 429
 
 
 def write_to_file(filename, data):
@@ -109,6 +130,8 @@ def get_scores():
 
 # HOMEPAGE
 @app.route('/', methods=["GET", "POST"])
+# Snapshot
+@limiter.limit("10 per minute", methods=["POST"])  # RL-02: stricter POST limit
 def index():
     if request.method == "POST":
         global username
@@ -122,6 +145,7 @@ def index():
 
 # USER WELCOME PAGE
 @app.route('/<username>', methods=["GET", "POST"])
+@limiter.limit("20 per minute")
 def user(username):
 
     # Create a User Specific File for Score Keeping etc.
@@ -139,6 +163,7 @@ def user(username):
 
 # GAME PAGE
 @app.route('/<username>/game', methods=["GET", "POST"])
+@limiter.limit("60 per minute")  # RL-01: cap gameplay flood
 def game(username):
 
     remaining_attempts = 3
@@ -184,6 +209,7 @@ def game(username):
 
 # GAMEOVER PAGE
 @app.route('/<username>/gameover', methods=["GET", "POST"])
+@limiter.limit("20 per minute")
 def gameover(username):
 
     clear_guesses(username)
@@ -205,6 +231,7 @@ def gameover(username):
 
 # FINISH PAGE
 @app.route('/<username>/congratulations', methods=["GET", "POST"])
+@limiter.limit("20 per minute")
 def congrats(username):
 
     clear_guesses(username)
@@ -219,6 +246,7 @@ def congrats(username):
 
 # HIGHSCORE PAGE
 @app.route('/highscores')
+@limiter.limit("30 per minute")
 def highscores():
 
     usernames_and_scores = get_scores()
