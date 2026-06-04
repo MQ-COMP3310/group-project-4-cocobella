@@ -1,0 +1,27 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container base-content">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h1>{{ user.username }}'s Scores</h1>
+
+            <p><strong>High Score:</strong> {{ user.high_score }}</p>
+
+            <h4>Previous Scores</h4>
+
+            {% if scores %}
+                <ul class="list-group">
+                    {% for score in scores %}
+                        <li class="list-group-item">Score: {{ score }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No previous scores available.</p>
+            {% endif %}
+
+            <div class="mt-3">
+                <a href="{{ url_for('index') }}" class="btn btn-secondary hvr-round-corners">Home</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

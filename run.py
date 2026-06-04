@@ -39,6 +39,7 @@ def rate_limit_exceeded(error):
 
 
 USERS_FILE = "data/-users.txt"
+SCORES_FILE = "data/-score-history.txt"
 
 bcrypt = Bcrypt(app)
 
@@ -273,6 +274,53 @@ def save_high_score_for_user(username, score):
 
     return True
 
+def save_high_score_for_user(username, score):
+    user = get_user_data_from_file(username)
+
+    if not user:
+        return False
+
+    if int(score) > user.high_score:
+        return update_user_score_in_file(username, new_high_score=score)
+
+    return True
+
+
+def add_score_history(username, score):
+    try:
+        with open(SCORES_FILE, "a") as f:
+            f.write(f"{username}:{score}\n")
+        return True
+    except IOError:
+        app.logger.error("Could not save score history.")
+        return False
+
+
+def get_score_history(username_to_find):
+    scores = []
+
+    try:
+        with open(SCORES_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, score = line.split(":", 1)
+
+                    if username == username_to_find:
+                        scores.append(int(score))
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed score record.")
+
+    except FileNotFoundError:
+        return []
+
+    return scores
+
 @login_manager.user_loader
 def load_user(user_id):
     return get_user_data_from_file(user_id)
@@ -361,6 +409,8 @@ def final_score(username):
         with open("data/-highscores.txt", "a") as file:
             file.writelines(username + "\n")
             file.writelines(score + "\n")
+
+        add_score_history(username, int(score))
 
         if current_user.is_authenticated and current_user.username == username:
             save_high_score_for_user(username, int(score))
@@ -473,7 +523,18 @@ def logout():
 @app.route("/profile")
 @login_required
 def profile():
-    return render_template("profile.html")
+    scores = get_score_history(current_user.username)
+    return render_template("profile.html", scores=scores)
+
+@app.route("/share/<username>")
+def share_score(username):
+    user = get_user_data_from_file(username)
+
+    if not user:
+        return "User not found.", 404
+
+    scores = get_score_history(username)
+    return render_template("share_score.html", user=user, scores=scores)
 
 @app.route("/admin", methods=["GET", "POST"])
 @login_required
@@ -611,6 +672,9 @@ def game(username):
 def gameover(username):
 
     final_game_score = end_score(username)
+
+    if final_game_score > 0:
+        add_score_history(username, final_game_score)
 
     if current_user.is_authenticated and current_user.username == username:
         save_high_score_for_user(username, final_game_score)

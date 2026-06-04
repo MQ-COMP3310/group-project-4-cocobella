@@ -1,13 +1,12 @@
 {% extends 'base.html' %} {% block content %}
 <div class="container base-content">
     <div class="row justify-content-center">
-        <div class="col-md-6">
+        <div class="col-md-8">
             <h1 class="text-center">User Profile</h1>
 
             <div class="card">
                 <div class="card-body">
                     <h5 class="card-title">Welcome, {{ current_user.username }}</h5>
-                    <p class="card-text">Your account details are shown below.</p>
 
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item"><strong>Username:</strong> {{ current_user.username }}</li>
@@ -15,6 +14,27 @@
                     </ul>
                 </div>
             </div>
+
+            <h4 class="mt-4">Previous Scores</h4>
+
+            {% if scores %}
+                <ul class="list-group">
+                    {% for score in scores %}
+                        <li class="list-group-item">Score: {{ score }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No previous scores yet.</p>
+            {% endif %}
+
+            <h4 class="mt-4">Share Your Scores</h4>
+            <p>
+                Share this public link with a non-user:
+                <br>
+                <a href="{{ url_for('share_score', username=current_user.username) }}">
+                    {{ url_for('share_score', username=current_user.username) }}
+                </a>
+            </p>
 
             <div class="text-center mt-3">
                 <a href="{{ url_for('index') }}" class="btn btn-secondary hvr-round-corners">Back to Home</a>
