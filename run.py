@@ -269,16 +269,99 @@ def get_scores():
     usernames_and_scores = sorted(zip(usernames, scores), key=lambda x: x[1], reverse=True)
     return usernames_and_scores
 
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not valid_username(username):
+            flash("Username must be 2-20 characters and only use letters, numbers, underscores or hyphens.")
+            return render_template("register.html")
+
+        if get_user_data_from_file(username):
+            flash("Username is already taken.")
+            return render_template("register.html")
+
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.")
+            return render_template("register.html")
+
+        if password != confirm_password:
+            flash("Passwords do not match.")
+            return render_template("register.html")
+
+        user = User(
+            username=username,
+            raw_password=password,
+            role="user",
+            cur_score=0,
+            high_score=0
+        )
+
+        if write_user_to_file(user):
+            flash("Account created. Please log in.")
+            return redirect(url_for("login"))
+
+        flash("Account could not be created.")
+
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+
+        user = get_user_data_from_file(username)
+
+        if user and user.verify_password(password):
+            login_user(user)
+            flash("Logged in successfully.")
+            return redirect(url_for("index"))
+
+        flash("Login failed. Check your username and password.")
+
+    return render_template("login.html")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("index"))
+
+
+@app.route("/profile")
+@login_required
+def profile():
+    return render_template("profile.html")
 
 # HOMEPAGE
 @app.route('/', methods=["GET", "POST"])
 def index():
+    if current_user.is_authenticated:
+        if request.method == "POST":
+            return redirect(url_for('user', username=current_user.username))
+
+        return render_template("index.html", page_title="Home", username=current_user.username)
+
     if request.method == "POST":
         username = request.form['username'].lower()
+
         if username == "":
             return render_template("index.html", page_title="Home", username=username)
-        else:
-            return redirect(url_for('user', username=username))
+
+        return redirect(url_for('user', username=username))
+
     return render_template("index.html", page_title="Home")
 
 
