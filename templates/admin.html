@@ -22,6 +22,7 @@
                 <th>Delete</th>
             </tr>
         </thead>
+
         <tbody>
             {% for user in users %}
             <tr>
@@ -32,18 +33,32 @@
                     <td>{{ user.username }}</td>
 
                     <td>
-                        <select name="role" class="form-control">
-                            <option value="user" {% if user.role == "user" %}selected{% endif %}>user</option>
-                            <option value="admin" {% if user.role == "admin" %}selected{% endif %}>admin</option>
-                        </select>
+                        {% if user.registered %}
+                            <select name="role" class="form-control">
+                                <option value="user" {% if user.role == "user" %}selected{% endif %}>user</option>
+                                <option value="admin" {% if user.role == "admin" %}selected{% endif %}>admin</option>
+                            </select>
+                        {% else %}
+                            <span>unregistered</span>
+                            <input type="hidden" name="role" value="unregistered">
+                        {% endif %}
                     </td>
 
                     <td>
-                        <input type="number" name="high_score" class="form-control" value="{{ user.high_score }}">
+                        {% if user.registered %}
+                            <input type="number" name="high_score" class="form-control" value="{{ user.high_score }}">
+                        {% else %}
+                            {{ user.high_score }}
+                            <input type="hidden" name="high_score" value="{{ user.high_score }}">
+                        {% endif %}
                     </td>
 
                     <td>
-                        <button type="submit" name="action" value="update" class="btn btn-primary">Update</button>
+                        {% if user.registered %}
+                            <button type="submit" name="action" value="update" class="btn btn-primary">Update</button>
+                        {% else %}
+                            -
+                        {% endif %}
                     </td>
 
                     <td>

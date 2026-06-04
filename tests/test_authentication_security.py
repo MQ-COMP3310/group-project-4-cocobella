@@ -175,3 +175,29 @@ def test_score_share_page_is_public(client):
     assert b"shareuser" in response.data
     assert b"High Score" in response.data
     assert b"Score: 18" in response.data
+
+def test_admin_can_delete_unregistered_score_content(client):
+    from run import USERS_FILE, SCORES_FILE
+
+    write_test_user(USERS_FILE, "adminuser", "password123", "admin")
+
+    with open(SCORES_FILE, "a") as f:
+        f.write("guestuser:10\n")
+
+    client.post("/login", data={
+        "username": "adminuser",
+        "password": "password123"
+    })
+
+    response = client.post("/admin", data={
+        "action": "delete",
+        "username": "guestuser"
+    }, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"User content deleted" in response.data
+
+    with open(SCORES_FILE, "r") as f:
+        stored_scores = f.read()
+
+    assert "guestuser" not in stored_scores

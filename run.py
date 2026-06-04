@@ -3,7 +3,7 @@ import sys
 import re
 import tempfile
 from importlib import reload
-from flask import Flask, render_template, redirect, request, url_for, flash, abort, session
+from flask import Flask, render_template, redirect, request, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
@@ -37,10 +37,11 @@ def rate_limit_exceeded(error):
     return render_template("rate_limited.html", page_title="Too Many Requests"), 429
 
 
-
+# Flat-file storage is used to match the existing project structure.
 USERS_FILE = "data/-users.txt"
 SCORES_FILE = "data/-score-history.txt"
 
+# Bcrypt hashes passwords, Flask-Login manages sessions, and CSRF protects forms.
 bcrypt = Bcrypt(app)
 
 login_manager = LoginManager(app)
@@ -49,9 +50,10 @@ login_manager.login_message_category = "info"
 
 csrf = CSRFProtect(app)
 
+# Usernames are filtered because they are used in file names.
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]{2,20}$")
 
-
+# User model used by Flask-Login.
 class User(UserMixin):
     def __init__(self, username, password_hash=None, role="user", cur_score=0, high_score=0, raw_password=None):
         self.id = username
@@ -73,11 +75,11 @@ class User(UserMixin):
     def get_id(self):
         return self.username
 
-
+# Returns True only when the username matches the allowed pattern.
 def valid_username(username):
     return bool(username and USERNAME_RE.fullmatch(username))
 
-
+# Looks up one user record for login and session loading.
 def get_user_data_from_file(username_to_find):
     try:
         with open(USERS_FILE, "r") as f:
@@ -101,7 +103,7 @@ def get_user_data_from_file(username_to_find):
 
     return None
 
-
+# Loads all registered users for admin display.
 def get_all_users_data():
     users = []
 
@@ -125,7 +127,7 @@ def get_all_users_data():
 
     return users
 
-
+# New users are saved with hashed passwords, not plaintext passwords.
 def write_user_to_file(user):
     try:
         with open(USERS_FILE, "a") as f:
@@ -136,7 +138,7 @@ def write_user_to_file(user):
         app.logger.error("Could not write user data.")
         return False
 
-
+# Updates scores using a temporary file to reduce file corruption risk.
 def update_user_score_in_file(username_to_update, new_cur_score=None, new_high_score=None):
     users = []
     user_found = False
@@ -184,6 +186,7 @@ def update_user_score_in_file(username_to_update, new_cur_score=None, new_high_s
         app.logger.error("Could not update user data.")
         return False
 
+# Allows admins to update a registered user's role and high score.
 def update_user_admin(username_to_update, new_role, new_high_score):
     users = []
     user_found = False
@@ -223,7 +226,7 @@ def update_user_admin(username_to_update, new_role, new_high_score):
     except (FileNotFoundError, IOError):
         return False
 
-
+# Removes a registered user account from the user file.
 def delete_user_from_file(username_to_delete):
     users = []
     user_found = False
@@ -262,7 +265,7 @@ def delete_user_from_file(username_to_delete):
     except (FileNotFoundError, IOError):
         return False
 
-
+# Saves the score only if it is higher than the user's current high score.
 def save_high_score_for_user(username, score):
     user = get_user_data_from_file(username)
 
@@ -274,18 +277,7 @@ def save_high_score_for_user(username, score):
 
     return True
 
-def save_high_score_for_user(username, score):
-    user = get_user_data_from_file(username)
-
-    if not user:
-        return False
-
-    if int(score) > user.high_score:
-        return update_user_score_in_file(username, new_high_score=score)
-
-    return True
-
-
+# Stores previous scores so users can view their score history.
 def add_score_history(username, score):
     try:
         with open(SCORES_FILE, "a") as f:
@@ -295,7 +287,7 @@ def add_score_history(username, score):
         app.logger.error("Could not save score history.")
         return False
 
-
+# Reads all stored scores for one username.
 def get_score_history(username_to_find):
     scores = []
 
@@ -321,19 +313,86 @@ def get_score_history(username_to_find):
 
     return scores
 
+# Removes score history for registered or anonymous users.
+def delete_score_history(username_to_delete):
+    remaining_scores = []
+
+    try:
+        with open(SCORES_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, score = line.split(":", 1)
+
+                    if username != username_to_delete:
+                        remaining_scores.append(f"{username}:{score}\n")
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed score record.")
+
+        directory = os.path.dirname(SCORES_FILE) or "."
+        fd, temp_path = tempfile.mkstemp(dir=directory, text=True)
+
+        with os.fdopen(fd, "w") as temp_file:
+            temp_file.writelines(remaining_scores)
+
+        os.replace(temp_path, SCORES_FILE)
+        return True
+
+    except (FileNotFoundError, IOError, OSError):
+        return False
+
+# Removes matching scores from the public highscore board.
+def delete_public_highscores(username_to_delete):
+    remaining_lines = []
+
+    try:
+        with open("data/-highscores.txt", "r") as f:
+            lines = f.read().splitlines()
+
+        for i in range(0, len(lines), 2):
+            try:
+                username = lines[i]
+                score = lines[i + 1]
+
+                if username != username_to_delete:
+                    remaining_lines.append(username + "\n")
+                    remaining_lines.append(score + "\n")
+
+            except IndexError:
+                pass
+
+        fd, temp_path = tempfile.mkstemp(dir="data", text=True)
+
+        with os.fdopen(fd, "w") as temp_file:
+            temp_file.writelines(remaining_lines)
+
+        os.replace(temp_path, "data/-highscores.txt")
+        return True
+
+    except (FileNotFoundError, IOError):
+        return False
+
+# Flask-Login uses this to reload the current user from the session.
 @login_manager.user_loader
 def load_user(user_id):
     return get_user_data_from_file(user_id)
 
+# Rejects form submissions with missing or invalid CSRF tokens.
 @app.errorhandler(CSRFError)
 def handle_csrf_error(error):
     return "CSRF validation failed.", 400
 
-
+# Makes the CSRF token available to all templates.
 @app.context_processor
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf)
 
+# Appends game data to the existing text files.
 def write_to_file(filename, data):
     with open(filename, "a+") as file:
         file.writelines(data)
@@ -449,6 +508,74 @@ def get_scores():
 
     return usernames_and_scores[:10]
 
+# Shows admins both registered users and anonymous score owners.
+def get_admin_content_rows():
+    content = {}
+
+    for user in get_all_users_data():
+        content[user.username] = {
+            "username": user.username,
+            "role": user.role,
+            "high_score": user.high_score,
+            "registered": True
+        }
+
+    try:
+        with open("data/-highscores.txt", "r") as file:
+            lines = file.read().splitlines()
+
+        for i in range(0, len(lines), 2):
+            try:
+                username = lines[i]
+                score = int(lines[i + 1])
+
+                if username not in content:
+                    content[username] = {
+                        "username": username,
+                        "role": "unregistered",
+                        "high_score": score,
+                        "registered": False
+                    }
+                elif score > content[username]["high_score"]:
+                    content[username]["high_score"] = score
+
+            except (IndexError, ValueError):
+                pass
+
+    except FileNotFoundError:
+        pass
+
+    try:
+        with open(SCORES_FILE, "r") as file:
+            for line in file:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, score = line.split(":", 1)
+                    score = int(score)
+
+                    if username not in content:
+                        content[username] = {
+                            "username": username,
+                            "role": "unregistered",
+                            "high_score": score,
+                            "registered": False
+                        }
+                    elif score > content[username]["high_score"]:
+                        content[username]["high_score"] = score
+
+                except ValueError:
+                    pass
+
+    except FileNotFoundError:
+        pass
+
+    return sorted(content.values(), key=lambda x: x["username"])
+
+# Registers new users after validating username and password input.
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
@@ -491,7 +618,7 @@ def register():
 
     return render_template("register.html")
 
-
+# Authenticates users using the stored bcrypt password hash.
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
@@ -512,22 +639,28 @@ def login():
 
     return render_template("login.html")
 
-
+# Ends the user's authenticated session.
 @app.route("/logout")
 @login_required
 def logout():
     logout_user()
     return redirect(url_for("index"))
 
-
+# Logged-in users can view their high score and previous scores.
 @app.route("/profile")
 @login_required
 def profile():
     scores = get_score_history(current_user.username)
     return render_template("profile.html", scores=scores)
 
+# Public score sharing page that can be viewed without logging in.
 @app.route("/share/<username>")
 def share_score(username):
+    username = username.strip().lower()
+
+    if not valid_username(username):
+        return "Invalid username.", 400
+
     user = get_user_data_from_file(username)
 
     if not user:
@@ -536,6 +669,7 @@ def share_score(username):
     scores = get_score_history(username)
     return render_template("share_score.html", user=user, scores=scores)
 
+# Admin only route for editing users and deleting score content.
 @app.route("/admin", methods=["GET", "POST"])
 @login_required
 def admin():
@@ -564,25 +698,33 @@ def admin():
                 flash("Invalid score.")
                 return redirect(url_for("admin"))
 
+            if not get_user_data_from_file(username):
+                flash("Only registered users can have role or profile score updated.")
+                return redirect(url_for("admin"))
+
             if update_user_admin(username, role, high_score):
                 flash("User updated.")
             else:
                 flash("User could not be updated.")
 
         elif action == "delete":
-            if delete_user_from_file(username):
-                flash("User deleted.")
+            deleted_user = delete_user_from_file(username)
+            deleted_scores = delete_score_history(username)
+            deleted_public_scores = delete_public_highscores(username)
+
+            if deleted_user or deleted_scores or deleted_public_scores:
+                flash("User content deleted.")
             else:
-                flash("User could not be deleted.")
+                flash("User content could not be deleted.")
 
         return redirect(url_for("admin"))
 
-    users = get_all_users_data()
+    users = get_admin_content_rows()
     return render_template("admin.html", users=users)
 
 # HOMEPAGE
+# Logged-in users play under their account name; anonymous users enter a safe username.
 @app.route('/', methods=["GET", "POST"])
-# Snapshot
 @limiter.limit("10 per minute", methods=["POST"])
 def index():
     if current_user.is_authenticated:
@@ -592,9 +734,13 @@ def index():
         return render_template("index.html", page_title="Home", username=current_user.username)
 
     if request.method == "POST":
-        username = request.form['username'].lower()
+        username = request.form["username"].strip().lower()
 
         if username == "":
+            return render_template("index.html", page_title="Home", username=username)
+
+        if not valid_username(username):
+            flash("Username must be 2-20 characters and only use letters, numbers, underscores or hyphens.")
             return render_template("index.html", page_title="Home", username=username)
 
         return redirect(url_for('user', username=username))
@@ -606,6 +752,15 @@ def index():
 @app.route('/<username>', methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def user(username):
+
+    username = username.strip().lower()
+
+    if not valid_username(username):
+        return "Invalid username.", 400
+
+    # Prevent logged-in users from accessing another user's game URL.
+    if current_user.is_authenticated and username != current_user.username:
+        return "You do not have permission.", 403
 
     # Create a User Specific File for Score Keeping etc.
     open("data/user-" + username + "-score.txt", 'a').close()
@@ -624,6 +779,15 @@ def user(username):
 @app.route('/<username>/game', methods=["GET", "POST"])
 @limiter.limit("60 per minute")
 def game(username):
+
+    username = username.strip().lower()
+
+    if not valid_username(username):
+        return "Invalid username.", 400
+
+    # Prevent logged-in users from accessing another user's game URL.
+    if current_user.is_authenticated and username != current_user.username:
+        return "You do not have permission.", 403
 
     remaining_attempts = 3
     riddles = riddle()
@@ -671,6 +835,15 @@ def game(username):
 @limiter.limit("20 per minute")
 def gameover(username):
 
+    username = username.strip().lower()
+
+    if not valid_username(username):
+        return "Invalid username.", 400
+    
+    # Prevent logged-in users from accessing another user's game URL.
+    if current_user.is_authenticated and username != current_user.username:
+        return "You do not have permission.", 403
+
     final_game_score = end_score(username)
 
     if final_game_score > 0:
@@ -695,6 +868,15 @@ def gameover(username):
 @app.route('/<username>/congratulations', methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def congrats(username):
+
+    username = username.strip().lower()
+
+    if not valid_username(username):
+        return "Invalid username.", 400
+    
+    # Prevent logged-in users from accessing another user's game URL.
+    if current_user.is_authenticated and username != current_user.username:
+        return "You do not have permission.", 403
 
     clear_guesses(username)
 
