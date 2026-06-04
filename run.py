@@ -160,6 +160,84 @@ def update_user_score_in_file(username_to_update, new_cur_score=None, new_high_s
         app.logger.error("Could not update user data.")
         return False
 
+def update_user_admin(username_to_update, new_role, new_high_score):
+    users = []
+    user_found = False
+
+    try:
+        with open(USERS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, password_hash, role, cur_score, high_score = line.split(":", 4)
+
+                    if username == username_to_update:
+                        user_found = True
+                        role = new_role
+                        high_score = str(new_high_score)
+
+                    users.append(f"{username}:{password_hash}:{role}:{cur_score}:{high_score}\n")
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed user record.")
+
+        if not user_found:
+            return False
+
+        fd, temp_path = tempfile.mkstemp(dir="data", text=True)
+
+        with os.fdopen(fd, "w") as temp_file:
+            temp_file.writelines(users)
+
+        os.replace(temp_path, USERS_FILE)
+        return True
+
+    except (FileNotFoundError, IOError):
+        return False
+
+
+def delete_user_from_file(username_to_delete):
+    users = []
+    user_found = False
+
+    try:
+        with open(USERS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, password_hash, role, cur_score, high_score = line.split(":", 4)
+
+                    if username == username_to_delete:
+                        user_found = True
+                        continue
+
+                    users.append(f"{username}:{password_hash}:{role}:{cur_score}:{high_score}\n")
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed user record.")
+
+        if not user_found:
+            return False
+
+        fd, temp_path = tempfile.mkstemp(dir="data", text=True)
+
+        with os.fdopen(fd, "w") as temp_file:
+            temp_file.writelines(users)
+
+        os.replace(temp_path, USERS_FILE)
+        return True
+
+    except (FileNotFoundError, IOError):
+        return False
+
 
 def save_high_score_for_user(username, score):
     user = get_user_data_from_file(username)
@@ -373,6 +451,50 @@ def logout():
 @login_required
 def profile():
     return render_template("profile.html")
+
+@app.route("/admin", methods=["GET", "POST"])
+@login_required
+def admin():
+    if current_user.role != "admin":
+        return "You do not have permission.", 403
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        username = request.form.get("username", "").strip().lower()
+
+        if username == current_user.username and action == "delete":
+            flash("You cannot delete your own admin account.")
+            return redirect(url_for("admin"))
+
+        if action == "update":
+            role = request.form.get("role", "user").strip().lower()
+            high_score = request.form.get("high_score", "0").strip()
+
+            if role not in ["user", "admin"]:
+                flash("Invalid role.")
+                return redirect(url_for("admin"))
+
+            try:
+                high_score = int(high_score)
+            except ValueError:
+                flash("Invalid score.")
+                return redirect(url_for("admin"))
+
+            if update_user_admin(username, role, high_score):
+                flash("User updated.")
+            else:
+                flash("User could not be updated.")
+
+        elif action == "delete":
+            if delete_user_from_file(username):
+                flash("User deleted.")
+            else:
+                flash("User could not be deleted.")
+
+        return redirect(url_for("admin"))
+
+    users = get_all_users_data()
+    return render_template("admin.html", users=users)
 
 # HOMEPAGE
 @app.route('/', methods=["GET", "POST"])

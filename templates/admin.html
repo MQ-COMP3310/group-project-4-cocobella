@@ -1,0 +1,58 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container base-content">
+    <h1 class="text-center">Admin</h1>
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="alert alert-info" role="alert">
+        {% for message in messages %}
+            {{ message }}<br>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <table class="table table-striped table-bordered table-hover">
+        <thead class="thead-dark">
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>High Score</th>
+                <th>Update</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="username" value="{{ user.username }}">
+
+                    <td>{{ user.username }}</td>
+
+                    <td>
+                        <select name="role" class="form-control">
+                            <option value="user" {% if user.role == "user" %}selected{% endif %}>user</option>
+                            <option value="admin" {% if user.role == "admin" %}selected{% endif %}>admin</option>
+                        </select>
+                    </td>
+
+                    <td>
+                        <input type="number" name="high_score" class="form-control" value="{{ user.high_score }}">
+                    </td>
+
+                    <td>
+                        <button type="submit" name="action" value="update" class="btn btn-primary">Update</button>
+                    </td>
+
+                    <td>
+                        <button type="submit" name="action" value="delete" class="btn btn-danger">Delete</button>
+                    </td>
+                </form>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

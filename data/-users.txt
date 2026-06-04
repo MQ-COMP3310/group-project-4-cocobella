@@ -1,1 +1,1 @@
-username1:$2b$12$eJB6gfJKbqTeCdvynk643u3V7bFtHuUToqTiMiI5fqyO5GYirYkqa:user:0:30
+username1:$2b$12$eJB6gfJKbqTeCdvynk643u3V7bFtHuUToqTiMiI5fqyO5GYirYkqa:admin:0:30
