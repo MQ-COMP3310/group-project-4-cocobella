@@ -25,9 +25,145 @@ login_manager.login_message_category = "info"
 
 csrf = CSRFProtect(app)
 
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]{2,20}$")
+
+
+class User(UserMixin):
+    def __init__(self, username, password_hash=None, role="user", cur_score=0, high_score=0, raw_password=None):
+        self.id = username
+        self.username = username
+        self.role = role
+        self.cur_score = int(cur_score)
+        self.high_score = int(high_score)
+
+        if raw_password is not None:
+            self.password_hash = bcrypt.generate_password_hash(raw_password).decode("utf-8")
+        else:
+            self.password_hash = password_hash
+
+    def verify_password(self, password):
+        if not self.password_hash:
+            return False
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+    def get_id(self):
+        return self.username
+
+
+def valid_username(username):
+    return bool(username and USERNAME_RE.fullmatch(username))
+
+
+def get_user_data_from_file(username_to_find):
+    try:
+        with open(USERS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, password_hash, role, cur_score, high_score = line.split(":", 4)
+
+                    if username == username_to_find:
+                        return User(username, password_hash, role, cur_score, high_score)
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed user record.")
+
+    except FileNotFoundError:
+        return None
+
+    return None
+
+
+def get_all_users_data():
+    users = []
+
+    try:
+        with open(USERS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, password_hash, role, cur_score, high_score = line.split(":", 4)
+                    users.append(User(username, password_hash, role, cur_score, high_score))
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed user record.")
+
+    except FileNotFoundError:
+        return []
+
+    return users
+
+
+def write_user_to_file(user):
+    try:
+        with open(USERS_FILE, "a") as f:
+            f.write(f"{user.username}:{user.password_hash}:{user.role}:{user.cur_score}:{user.high_score}\n")
+        return True
+
+    except IOError:
+        app.logger.error("Could not write user data.")
+        return False
+
+
+def update_user_score_in_file(username_to_update, new_cur_score=None, new_high_score=None):
+    users = []
+    user_found = False
+
+    try:
+        with open(USERS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    username, password_hash, role, cur_score, high_score = line.split(":", 4)
+
+                    if username == username_to_update:
+                        user_found = True
+
+                        if new_cur_score is not None:
+                            cur_score = str(new_cur_score)
+
+                        if new_high_score is not None:
+                            high_score = str(new_high_score)
+
+                    users.append(f"{username}:{password_hash}:{role}:{cur_score}:{high_score}\n")
+
+                except ValueError:
+                    app.logger.warning("Skipped malformed user record.")
+
+        if not user_found:
+            return False
+
+        fd, temp_path = tempfile.mkstemp(dir="data", text=True)
+
+        with os.fdopen(fd, "w") as temp_file:
+            temp_file.writelines(users)
+
+        os.replace(temp_path, USERS_FILE)
+        return True
+
+    except FileNotFoundError:
+        return False
+
+    except IOError:
+        app.logger.error("Could not update user data.")
+        return False
+
+
 @login_manager.user_loader
 def load_user(user_id):
-    return None
+    return get_user_data_from_file(user_id)
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(error):
