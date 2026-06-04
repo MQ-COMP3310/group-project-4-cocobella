@@ -161,6 +161,17 @@ def update_user_score_in_file(username_to_update, new_cur_score=None, new_high_s
         return False
 
 
+def save_high_score_for_user(username, score):
+    user = get_user_data_from_file(username)
+
+    if not user:
+        return False
+
+    if int(score) > user.high_score:
+        return update_user_score_in_file(username, new_high_score=score)
+
+    return True
+
 @login_manager.user_loader
 def load_user(user_id):
     return get_user_data_from_file(user_id)
@@ -247,27 +258,45 @@ def final_score(username):
 
     if username != "" and score != "":
         with open("data/-highscores.txt", "a") as file:
-                file.writelines(username + "\n")
-                file.writelines(score + "\n")
+            file.writelines(username + "\n")
+            file.writelines(score + "\n")
+
+        if current_user.is_authenticated and current_user.username == username:
+            save_high_score_for_user(username, int(score))
+            current_user.high_score = max(current_user.high_score, int(score))
     else:
         return
 
 #Used to retrieve scores from highscore file for use on highscore page
 def get_scores():
-    usernames = []
-    scores = []
+    scores_by_user = {}
 
-    with open("data/-highscores.txt", "r") as file:
-        lines = file.read().splitlines()
-    # Separates usernames and scores
-    for i, text in enumerate(lines):
-        if i%2 ==0:
-            usernames.append(text)
-        else:
-            scores.append(text)
-    # Sorts and zips all the highscore info up for use on highscore page
-    usernames_and_scores = sorted(zip(usernames, scores), key=lambda x: x[1], reverse=True)
-    return usernames_and_scores
+    try:
+        with open("data/-highscores.txt", "r") as file:
+            lines = file.read().splitlines()
+
+        for i in range(0, len(lines), 2):
+            try:
+                username = lines[i]
+                score = int(lines[i + 1])
+
+                if username not in scores_by_user or score > scores_by_user[username]:
+                    scores_by_user[username] = score
+
+            except (IndexError, ValueError):
+                pass
+
+    except FileNotFoundError:
+        pass
+
+    for user in get_all_users_data():
+        if user.high_score > 0:
+            if user.username not in scores_by_user or user.high_score > scores_by_user[user.username]:
+                scores_by_user[user.username] = user.high_score
+
+    usernames_and_scores = sorted(scores_by_user.items(), key=lambda x: x[1], reverse=True)
+
+    return usernames_and_scores[:10]
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -431,14 +460,14 @@ def game(username):
 @app.route('/<username>/gameover', methods=["GET", "POST"])
 def gameover(username):
 
+    final_game_score = end_score(username)
+
+    if current_user.is_authenticated and current_user.username == username:
+        save_high_score_for_user(username, final_game_score)
+        current_user.high_score = max(current_user.high_score, final_game_score)
+
     clear_guesses(username)
     clear_score(username)
-
-    rem_attempts = 3
-    riddles = riddle()
-    riddle_index = 0
-    answers = riddle_answers()
-    score = 0
 
     if request.method =="POST":
 
