@@ -13,6 +13,7 @@
 
     <div class="col-md-12 form-content text-center">
       <form method="POST" class="form-actual">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="text" class="form-control" name="answer" id="answer" autofocus>
         <input type="hidden" name="riddle_index" id="riddle_index" value={{riddle_index}}>
         <br>

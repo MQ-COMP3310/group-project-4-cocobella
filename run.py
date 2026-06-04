@@ -5,6 +5,9 @@ from importlib import reload
 from flask import Flask, render_template, redirect, request, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_bcrypt import Bcrypt
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 
 # Needed for encoding to utf8
 reload(sys)
@@ -12,6 +15,20 @@ reload(sys)
 app = Flask(__name__)
 app.secret_key = 'some_secret'
 data = []
+
+USERS_FILE = "data/-users.txt"
+
+bcrypt = Bcrypt(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message_category = "info"
+
+csrf = CSRFProtect(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return None
 
 # Task 9 - Feature 1: Rate limiting
 # Security principle: defence in depth for availability (CIA - Availability).
