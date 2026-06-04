@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 from importlib import reload
 from flask import Flask, render_template, redirect, request, url_for
 from flask_limiter import Limiter
@@ -32,12 +33,81 @@ def rate_limit_exceeded(error):
     return render_template("rate_limited.html", page_title="Too Many Requests"), 429
 
 
+
+# Task 9 - Feature 2: Input Validation & Sanitisation
+
+
+# Input validation -01
+# Centralised validation function keeps all input rules in one
+# place, making them easy to audit and update consistently.
+
+def validate_username(username):
+
+  # This validates  username input before any file or route operation. Returns (True, None) if valid, or (False, error_message) if not.
+    if not username or username.strip() == "":
+        # IV-01: reject empty input early
+        return False, "Please enter a username."
+
+    if len(username) > 20:
+        # IV-02
+        # create oversized filenames or be used for buffer-style attacks.
+        return False, "Username must be 20 characters or fewer."
+
+    if not re.match(r'^[a-zA-Z0-9]+$', username):
+        # IV-03 (Integrity / OWASP A01): reject special characters.
+        # Without this, a username like '../-answers' could allow a
+        # malicious user to read or overwrite sensitive data files
+        # (path traversal). This also blocks HTML/script characters
+        # that could cause XSS in templates. 
+        return False, "Username can only contain letters and numbers."
+
+    return True, None
+
+
+def validate_answer(answer):
+    
+  #  IV-04: Validate the game answer field. Returns (True, cleaned_answer) or (False, error_message).
+    
+    
+   
+    if not answer or answer.strip() == "":
+        # IV-04: reject empty answer submission
+        return False, "Please enter an answer."
+
+    answer = answer.strip()
+
+    if len(answer) > 50:
+        # IV-05 (Availability): cap answer length to prevent
+        # oversized strings being written to guess files.
+        return False, "Answer is too long."
+
+    return True, answer
+
+
+def validate_riddle_index(index_str, max_index=9):
+  
+    # IV-06 (Integrity / OWASP A03): Validate that riddle_index is a
+    # non-negative integer within the valid range before using it to
+    # index lists or construct filenames. An out-of-range or non-integer
+    # value could cause an unhandled exception that leaks server details.
+    # Returns (True, int_value) or (False, 0) as a safe 
+    
+    try:
+        index = int(index_str)
+        if index < 0 or index > max_index:
+            return False, 0
+        return True, index
+    except (ValueError, TypeError):
+        # IV-06: non-integer input falls back to 0 safely
+        return False, 0
+
+
 def write_to_file(filename, data):
     with open(filename, "a+") as file:
         file.writelines(data)
 
 
-#This is where the riddles live
+# This is where the riddles live
 def riddle():
     riddles = []
     with open("data/-riddles.txt", "r") as e:
@@ -88,7 +158,7 @@ def add_to_score():
     round_score = 4 - num_of_attempts()
     return round_score
 
-#Adds all the scores from all riddles to make final score
+# Adds all the scores from all riddles to make final score
 def end_score(username):
     with open("data/user-" + username + "-score.txt", "r") as numbers_file:
         total = 0
@@ -99,7 +169,7 @@ def end_score(username):
                 pass
     return total
 
-#Add final score to highscore list after the last riddle
+# Add final score to highscore list after the last riddle
 def final_score(username):
     score = str(end_score(username))
 
@@ -110,20 +180,18 @@ def final_score(username):
     else:
         return
 
-#Used to retrieve scores from highscore file for use on highscore page
+# Used to retrieve scores from highscore file for use on highscore page
 def get_scores():
     usernames = []
     scores = []
 
     with open("data/-highscores.txt", "r") as file:
         lines = file.read().splitlines()
-    # Separates usernames and scores
     for i, text in enumerate(lines):
         if i%2 ==0:
             usernames.append(text)
         else:
             scores.append(text)
-    # Sorts and zips all the highscore info up for use on highscore page
     usernames_and_scores = sorted(zip(usernames, scores), key=lambda x: x[1], reverse=True)
     return usernames_and_scores
 
@@ -135,11 +203,19 @@ def get_scores():
 def index():
     if request.method == "POST":
         global username
-        username = request.form['username'].lower()
-        if username == "":
-            return render_template("index.html", page_title="Home", username=username)
-        else:
-            return redirect(url_for('user', username=username))
+
+        # IV-01, IV-02, IV-03: validate username before any file
+        # operations or redirects. Raw form input is never trusted.
+        raw_username = request.form.get('username', '').lower()
+        valid, error = validate_username(raw_username)
+
+        if not valid:
+            # IV-01: return error message to user, do not proceed
+            return render_template("index.html", page_title="Home", error=error)
+
+        username = raw_username
+        return redirect(url_for('user', username=username))
+
     return render_template("index.html", page_title="Home")
 
 
@@ -148,23 +224,34 @@ def index():
 @limiter.limit("20 per minute")
 def user(username):
 
+    # IV-03: re-validate username from the URL parameter.
+    # Users can type any URL manually, so we cannot trust that
+    # the username in the URL passed through our homepage check.
+    valid, error = validate_username(username)
+    if not valid:
+        return redirect(url_for('index'))
+
     # Create a User Specific File for Score Keeping etc.
     open("data/user-" + username + "-score.txt", 'a').close()
     clear_score(username)
     open("data/user-" + username + "-guesses.txt", 'a').close()
     clear_guesses(username)
 
-    if request.method =="POST":
+    if request.method == "POST":
         return redirect(url_for('game', username=username))
 
-    return render_template("welcome.html",
-                            username=username)
+    return render_template("welcome.html", username=username)
 
 
 # GAME PAGE
 @app.route('/<username>/game', methods=["GET", "POST"])
 @limiter.limit("60 per minute")  # RL-01: cap gameplay flood
 def game(username):
+
+    # IV-03: validate username from URL on every game request
+    valid, error = validate_username(username)
+    if not valid:
+        return redirect(url_for('index'))
 
     remaining_attempts = 3
     riddles = riddle()
@@ -174,37 +261,49 @@ def game(username):
 
     if request.method == "POST":
 
-        riddle_index = int(request.form["riddle_index"])
-        user_response = request.form["answer"].title()
+        # IV-06: validate riddle_index before using it to index lists
+        _, riddle_index = validate_riddle_index(request.form.get("riddle_index", "0"))
+
+        # IV-04, IV-05: validate and sanitise the answer field
+        raw_answer = request.form.get("answer", "")
+        valid_answer, result = validate_answer(raw_answer)
+
+        if not valid_answer:
+            # IV-04: re-render game page with error, do not process
+            return render_template("game.html",
+                                   username=username,
+                                   riddle_index=riddle_index,
+                                   riddles=riddles,
+                                   answers=answers,
+                                   attempts=store_all_attempts(username),
+                                   remaining_attempts=attempts_remaining(),
+                                   score=end_score(username),
+                                   error=result)
+
+        # IV-04: use the cleaned/stripped answer, not the raw input
+        user_response = result.title()
 
         write_to_file("data/user-" + username + "-guesses.txt", user_response + "\n")
 
-        # Compare the user's answer to the correct answer of the riddle
         if answers[riddle_index] == user_response:
-            # Correct answer
             if riddle_index < 9:
-                # If riddle number is less than 10 & answer is correct: add score, clear wrong answers file and go to next riddle
                 write_to_file("data/user-" + username + "-score.txt", str(add_to_score()) + "\n")
                 clear_guesses(username)
                 riddle_index += 1
             else:
-                # If right answer on LAST riddle: add score, submit score to highscore file and redirect to congrats page
                 write_to_file("data/user-" + username + "-score.txt", str(add_to_score()) + "\n")
                 final_score(username)
                 return redirect(url_for('congrats', username=username, score=end_score(username)))
-
         else:
-            # Incorrect answer
             if attempts_remaining() > 0:
-                # if answer was wrong and more than 0 attempts remaining, reload current riddle
                 riddle_index = riddle_index
             else:
-                # If all attempts are used up, redirect to Gameover page
                 return redirect(url_for('gameover', username=username))
 
     return render_template("game.html",
                             username=username, riddle_index=riddle_index, riddles=riddles,
-                            answers=answers, attempts=store_all_attempts(username), remaining_attempts=attempts_remaining(), score=end_score(username))
+                            answers=answers, attempts=store_all_attempts(username),
+                            remaining_attempts=attempts_remaining(), score=end_score(username))
 
 
 # GAMEOVER PAGE
@@ -212,21 +311,18 @@ def game(username):
 @limiter.limit("20 per minute")
 def gameover(username):
 
+    # IV-03: validate username from URL
+    valid, error = validate_username(username)
+    if not valid:
+        return redirect(url_for('index'))
+
     clear_guesses(username)
     clear_score(username)
 
-    rem_attempts = 3
-    riddles = riddle()
-    riddle_index = 0
-    answers = riddle_answers()
-    score = 0
-
-    if request.method =="POST":
-
+    if request.method == "POST":
         return redirect(url_for('game', username=username))
 
-    return render_template("gameover.html",
-                            username=username)
+    return render_template("gameover.html", username=username)
 
 
 # FINISH PAGE
@@ -234,9 +330,14 @@ def gameover(username):
 @limiter.limit("20 per minute")
 def congrats(username):
 
+    # IV-03: validate username from URL
+    valid, error = validate_username(username)
+    if not valid:
+        return redirect(url_for('index'))
+
     clear_guesses(username)
 
-    if request.method =="POST":
+    if request.method == "POST":
         usernames_and_scores = get_scores()
         return redirect(url_for('highscores', usernames_and_scores=usernames_and_scores))
 
@@ -251,7 +352,8 @@ def highscores():
 
     usernames_and_scores = get_scores()
 
-    return render_template("highscores.html", page_title="Highscores", usernames_and_scores=usernames_and_scores)
+    return render_template("highscores.html", page_title="Highscores",
+                           usernames_and_scores=usernames_and_scores)
 
 
 if __name__ == '__main__':
