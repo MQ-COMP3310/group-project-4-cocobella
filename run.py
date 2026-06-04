@@ -1,15 +1,42 @@
 import os
 import sys
+import re
+import tempfile
 from importlib import reload
-from flask import Flask, render_template, redirect, request, url_for
+from flask import Flask, render_template, redirect, request, url_for, flash, abort, session
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_bcrypt import Bcrypt
+from flask_wtf.csrf import CSRFProtect, CSRFError, generate_csrf
 
 # Needed for encoding to utf8
 reload(sys)
 
 app = Flask(__name__)
-os.environ.get('SECRET_KEY')
+app.secret_key = os.environ.get("SECRET_KEY", "some_secret")
 data = []
 
+USERS_FILE = "data/-users.txt"
+
+bcrypt = Bcrypt(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message_category = "info"
+
+csrf = CSRFProtect(app)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return None
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    return "CSRF validation failed.", 400
+
+
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 
 def write_to_file(filename, data):
     with open(filename, "a+") as file:
@@ -53,18 +80,18 @@ def store_all_attempts(username):
         attempts = incorrect_attempts.readlines()
     return attempts
 
-def num_of_attempts():
+def num_of_attempts(username):
     attempts = store_all_attempts(username)
     return len(attempts)
 
-def attempts_remaining():
-    remaining_attempts = 3 - num_of_attempts()
+def attempts_remaining(username):
+    remaining_attempts = 3 - num_of_attempts(username)
     return remaining_attempts
 
 
 # Score gets lower the more attempts used
-def add_to_score():
-    round_score = 4 - num_of_attempts()
+def add_to_score(username):
+    round_score = 4 - num_of_attempts(username)
     return round_score
 
 #Adds all the scores from all riddles to make final score
@@ -148,7 +175,7 @@ def game(username):
 
     if request.method == "POST":
 
-        riddle_index = session.get('riddle_index', 0)
+        riddle_index = int(request.form["riddle_index"])
         user_response = request.form["answer"].title()
 
         write_to_file("data/user-" + username + "-guesses.txt", user_response + "\n")
@@ -158,18 +185,18 @@ def game(username):
             # Correct answer
             if riddle_index < 9:
                 # If riddle number is less than 10 & answer is correct: add score, clear wrong answers file and go to next riddle
-                write_to_file("data/user-" + username + "-score.txt", str(add_to_score()) + "\n")
+                write_to_file("data/user-" + username + "-score.txt", str(add_to_score(username)) + "\n")
                 clear_guesses(username)
                 riddle_index += 1
             else:
                 # If right answer on LAST riddle: add score, submit score to highscore file and redirect to congrats page
-                write_to_file("data/user-" + username + "-score.txt", str(add_to_score()) + "\n")
+                write_to_file("data/user-" + username + "-score.txt", str(add_to_score(username)) + "\n")
                 final_score(username)
                 return redirect(url_for('congrats', username=username, score=end_score(username)))
 
         else:
             # Incorrect answer
-            if attempts_remaining() > 0:
+            if attempts_remaining(username) > 0:
                 # if answer was wrong and more than 0 attempts remaining, reload current riddle
                 riddle_index = riddle_index
             else:
@@ -178,7 +205,7 @@ def game(username):
 
     return render_template("game.html",
                             username=username, riddle_index=riddle_index, riddles=riddles,
-                             attempts=store_all_attempts(username), remaining_attempts=attempts_remaining(), score=end_score(username))
+                             attempts=store_all_attempts(username), remaining_attempts=attempts_remaining(username), score=end_score(username))
 
 
 # GAMEOVER PAGE
