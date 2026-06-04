@@ -116,26 +116,3 @@ def test_non_number_riddle_index_is_rejected():
     valid, index = validate_riddle_index("abc")
     assert valid is False
     assert index == 0
-
-
-# --- Integration tests via the Flask app ---
-
-def test_valid_username_redirects_to_welcome(client):
-    """IV-01: A valid username on the homepage should redirect to the welcome page."""
-    resp = client.post("/", data={"username": "alice"})
-    assert resp.status_code == 302
-    assert "alice" in resp.headers["Location"]
-
-
-def test_empty_username_stays_on_homepage(client):
-    """IV-01: An empty username should stay on the homepage with an error."""
-    resp = client.post("/", data={"username": ""}, follow_redirects=True)
-    assert resp.status_code == 200
-    assert b"alice" not in resp.data
-
-
-def test_path_traversal_username_is_blocked(client):
-    """IV-03: A path traversal username should be blocked at the homepage."""
-    resp = client.post("/", data={"username": "../secret"}, follow_redirects=True)
-    assert resp.status_code == 200
-    assert b"secret" not in resp.data

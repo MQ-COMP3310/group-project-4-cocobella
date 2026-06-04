@@ -79,6 +79,41 @@ class User(UserMixin):
 def valid_username(username):
     return bool(username and USERNAME_RE.fullmatch(username))
 
+# Task 9 - Feature 2: Input Validation & Sanitisation
+def validate_username(username):
+    # IV-01: reject empty input early
+    if not username or username.strip() == "":
+        return False, "Please enter a username."
+    # IV-02: long usernames could create oversized filenames
+    if len(username) > 20:
+        return False, "Username must be 20 characters or fewer."
+    # IV-03: reject special characters to block path traversal and XSS
+    if not re.match(r'^[a-zA-Z0-9]+$', username):
+        return False, "Username can only contain letters and numbers."
+    return True, None
+
+
+def validate_answer(answer):
+    # IV-04: reject empty answer submission
+    if not answer or answer.strip() == "":
+        return False, "Please enter an answer."
+    answer = answer.strip()
+    # IV-05: cap answer length to prevent oversized strings
+    if len(answer) > 50:
+        return False, "Answer is too long."
+    return True, answer
+
+
+def validate_riddle_index(index_str, max_index=9):
+    # IV-06: non-integer input falls back to 0 safely
+    try:
+        index = int(index_str)
+        if index < 0 or index > max_index:
+            return False, 0
+        return True, index
+    except (ValueError, TypeError):
+        return False, 0
+
 # Looks up one user record for login and session loading.
 def get_user_data_from_file(username_to_find):
     try:
